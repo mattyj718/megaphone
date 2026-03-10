@@ -1,0 +1,35 @@
+sources:
+  - name: "Simon Willison"
+    type: rss
+    url: "https://simonwillison.net/atom/everything"
+  - name: "Pragmatic Engineer"
+    type: rss
+    url: "https://feeds.feedburner.com/ThePragmaticEngineer"
+  - name: "Hacker News Best"
+    type: rss
+    url: "https://hnrss.org/best"
+  - name: "Alpha Signal"
+    type: email
+    sender: "newsletter@alphasignal.ai"
+  - name: "TLDR"
+    type: email
+    sender: "dan@tldrnewsletter.com"
+  - name: "CTO Newsletter"
+    type: email
+    sender: "newsletter@cto.ai"
+
+scoring:
+  threshold: 6.0
+  topics:
+    - AI and machine learning
+    - engineering leadership
+    - fintech infrastructure
+    - developer tools
+    - software architecture
+
+llm:
+  scoring_model: "gpt-5-mini"
+  drafting_model: "claude-sonnet-4-6"
+
+gmail:
+  label: "Newsletters"

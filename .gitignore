@@ -1,0 +1,18 @@
+# Database (binary) — backed up via scripts/backup.sh
+megaphone.db
+megaphone.db-journal
+megaphone.db-wal
+megaphone.db-shm
+
+# Binary backup copy (SQL dump is committed, binary is rclone'd)
+backups/megaphone.db
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
