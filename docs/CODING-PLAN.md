@@ -27,7 +27,23 @@ No frameworks. No ORMs. No task queues (cron + simple scripts).
 
 Goal: Ingest content from RSS feeds and email newsletters, score it with an LLM, and manage a content backlog via CLI.
 
-### Step 1.1: Project scaffolding + database
+### Step 1.1: Backup & portability ✅
+
+**Files:**
+- `scripts/backup.sh` — Cron-safe backup: sqlite3 `.backup` for crash-consistent copy, SQL text dump committed to git + pushed to GitHub, binary DB + SQL dump synced to Google Drive and Dropbox via rclone
+- `scripts/restore.sh` — One-command restore from any of 3 sources: `./scripts/restore.sh gdrive|dropbox|git`
+- `docs/backup.md` — Quick reference
+
+**3 backup destinations:**
+| # | Destination | What's stored | Restore command |
+|---|---|---|---|
+| 1 | GitHub (git) | SQL text dump (diffable) | `restore.sh git` |
+| 2 | Google Drive | Binary DB + SQL dump | `restore.sh gdrive` |
+| 3 | Dropbox | Binary DB + SQL dump | `restore.sh dropbox` |
+
+**Cron:** Every 4 hours — `0 */4 * * * cd /home/matt/dev/megaphone && ./scripts/backup.sh`
+
+### Step 1.2: Project scaffolding + database
 
 **Files:**
 - `megaphone/__init__.py` — empty, makes it a package
@@ -264,12 +280,13 @@ Goal: Find and comment on high-value external posts on Bluesky (and optionally L
 
 | Step | What | Depends On |
 |---|---|---|
-| 1.1 | DB + config + scaffolding | Nothing |
-| 1.2 | RSS ingestion | 1.1 |
-| 1.3 | Gmail ingestion | 1.1 |
-| 1.4 | Content scoring | 1.1 |
-| 1.5 | CLI | 1.1–1.4 |
-| 1.6 | Status lifecycle refinement | 1.1–1.5 |
+| 1.1 | Backup & portability | Nothing |
+| 1.2 | DB + config + scaffolding | Nothing |
+| 1.3 | RSS ingestion | 1.2 |
+| 1.4 | Gmail ingestion | 1.2 |
+| 1.5 | Content scoring | 1.2 |
+| 1.6 | CLI | 1.2–1.5 |
+| 1.7 | Status lifecycle refinement | 1.2–1.6 |
 | 2 | Drafting + publishing + scheduling | Phase 1, LinkedIn app, Bluesky account |
 | 3 | Engagement automation | Phase 2 |
 | 4 | Proactive discovery | Phase 2 (posting infra), Phase 3 (engagement patterns) |
