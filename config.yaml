@@ -14,6 +14,12 @@ sources:
   - name: "Hedgeweek Solutions"
     type: rss
     url: "https://www.hedgeweek.com/solutions/feed/"
+  - name: "AI Street"
+    type: rss
+    url: "https://www.ai-street.co/feed"
+  - name: "AI Street (email)"
+    type: email
+    sender: "matt@ai-street.co"
   - name: "Alpha Signal"
     type: email
     sender: "newsletter@alphasignal.ai"
