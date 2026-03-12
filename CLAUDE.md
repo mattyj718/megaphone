@@ -14,7 +14,7 @@ LinkedIn API research: `docs/linkedin-access.md`
 - **Docs:** Markdown in `docs/`
 - **Philosophy:** Simplicity wins. Fewest lines of code and files as possible. Don't over-engineer. No abstractions until the second time you need them.
 - **Dependencies:** Minimize. stdlib > small library > big framework. No Django, no FastAPI unless we outgrow simple scripts.
-- **LLM calls:** Anthropic API via OAuth token preferred (MAX plan). Fall back to OpenAI gpt-5-mini for cheap high-volume tasks (scoring, sentiment). API keys come from environment variables — never hardcode secrets.
+- **LLM calls:** All Anthropic via MAX plan. Claude Haiku 4 for cheap high-volume tasks (scoring, sentiment, classification). Claude Opus 4.6 for quality tasks (drafting, replies, engagement). API key via `ANTHROPIC_API_KEY` env var — never hardcode secrets.
 - **Config:** JSON or YAML files. No .env files with 50 keys — keep it simple.
 - **Error handling:** Fail loud. Don't silently swallow errors. Log what happened and why.
 - **Tests:** Write them for core logic (scoring, API wrappers, data model). Don't test glue code.
@@ -68,8 +68,7 @@ def reply_to_comment(comment_id: str, body: str) -> dict: ...
 | Buffer | Buffer Publish API | Optional scheduling backend |
 | Gmail | Gmail API (Python `google-api-python-client`) | Newsletter ingestion |
 | RSS | `feedparser` library | Feed polling |
-| Anthropic | API via OAuth token | Drafting, voice matching, reply generation |
-| OpenAI | API via key | gpt-5-mini for scoring, sentiment, dedup |
+| Anthropic | API via MAX plan | Opus 4.6 for drafting/engagement, Haiku 4 for scoring/sentiment |
 
 ## Data Model
 
