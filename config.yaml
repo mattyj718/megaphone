@@ -29,6 +29,12 @@ sources:
   - name: "CTO Newsletter"
     type: email
     sender: "newsletter@cto.ai"
+  - name: "Lenny's Newsletter"
+    type: rss
+    url: "https://www.lennysnewsletter.com/feed"
+  - name: "Lenny's Newsletter (email)"
+    type: email
+    sender: "lenny@substack.com"
 
 scoring:
   threshold: 6.0
