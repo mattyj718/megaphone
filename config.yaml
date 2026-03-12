@@ -46,8 +46,12 @@ scoring:
     - software architecture
 
 llm:
-  scoring_model: "gpt-5-mini"
+  # High-volume tasks (scoring, sentiment, classification) — cheap Anthropic model
+  scoring_model: "claude-haiku-4"
+  scoring_provider: "anthropic"
+  # Quality tasks (drafting, replies, engagement) — premium Anthropic model
   drafting_model: "claude-sonnet-4-6"
+  drafting_provider: "anthropic"
 
 gmail:
   label: "Newsletters"

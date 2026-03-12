@@ -1,10 +1,10 @@
-"""LLM-based content scoring using OpenAI gpt-5-mini."""
+"""LLM-based content scoring using Anthropic Claude."""
 
 import json
 import logging
 import os
 
-from openai import OpenAI
+import anthropic
 
 from megaphone import db
 
@@ -26,11 +26,11 @@ Return ONLY valid JSON in this exact format, no other text:
 
 
 def _get_client():
-    """Get OpenAI client."""
-    api_key = os.environ.get("OPENAI_API_KEY")
+    """Get Anthropic client."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY environment variable not set")
-    return OpenAI(api_key=api_key)
+        raise RuntimeError("ANTHROPIC_API_KEY environment variable not set")
+    return anthropic.Anthropic(api_key=api_key)
 
 
 def score_item(item, config):
@@ -53,16 +53,16 @@ def score_item(item, config):
     )
 
     client = _get_client()
-    model = config.get("llm", {}).get("scoring_model", "gpt-5-mini")
+    model = config.get("llm", {}).get("scoring_model", "claude-haiku-4")
 
-    response = client.chat.completions.create(
+    response = client.messages.create(
         model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
         max_tokens=300,
+        temperature=0.3,
+        messages=[{"role": "user", "content": prompt}],
     )
 
-    raw = response.choices[0].message.content.strip()
+    raw = response.content[0].text.strip()
 
     # Try to parse JSON from the response
     try:
