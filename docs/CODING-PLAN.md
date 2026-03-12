@@ -19,6 +19,8 @@ Core (install as needed per phase):
 - `requests` — LinkedIn API calls (stdlib `urllib` is too painful)
 - `pyyaml` — config file parsing
 
+- `linkedin-api` — unofficial LinkedIn profile/feed access (for watchlist + discovery)
+
 No frameworks. No ORMs. No task queues (cron + simple scripts).
 
 ---
@@ -217,10 +219,54 @@ Goal: Draft posts from candidates, publish to LinkedIn + Bluesky, simple schedul
 - Add `posts` table to `db.py`
 - CLI additions: `draft <id> [--platform linkedin|bluesky]`, `approve <post_id>`, `schedule <post_id>`, `publish` (run publisher)
 
+### Step 2.5: People table + watchlist ingestion
+
+**Files:**
+- Add `people` table to `db.py` — schema per PRD Module 3B (name, company, linkedin_url, bluesky_handle, is_followed_linkedin, is_followed_bluesky, is_watchlisted, notes, created/updated timestamps)
+- `megaphone/sources.py` additions:
+  - `ingest_watchlist(db, config) -> list[int]` — iterates watchlisted people, fetches their recent posts, inserts as `content_items` with `source_type=watchlist`
+  - Bluesky: use `app.bsky.feed.getAuthorFeed` via `atproto` lib (official, reliable)
+  - LinkedIn: use unofficial `linkedin-api` to fetch profile activity, or skip and rely on manual URL sharing
+  - Dedup by URL, same as RSS/email items
+  - Polling interval: configurable, default every 4 hours
+- `ingest_all()` updated to include watchlist sources
+- CLI additions: `people` (list watchlisted people), `people add <name> --company <co> [--linkedin <url>] [--bluesky <handle>] [--watchlist]`
+
+**`people` table query functions in `db.py`:**
+- `insert_person(...)`, `get_people(watchlisted=None)`, `update_person(id, ...)`
+- `get_watchlisted_people()` — convenience for ingestion loop
+
+**Tests:** Test watchlist ingestion with mock AT Protocol responses. Test people CRUD.
+
+### Step 2.6: Follow management
+
+**Files:**
+- `megaphone/platforms/linkedin.py` additions:
+  - `follow_profile(profile_id, token) -> dict`
+  - `unfollow_profile(profile_id, token) -> dict`
+  - Profile resolution: given a LinkedIn URL, extract the profile ID
+- `megaphone/platforms/bluesky.py` additions:
+  - `follow_account(handle, session) -> dict` — via AT Protocol `app.bsky.graph.follow`
+  - `unfollow_account(handle, session) -> dict`
+  - Handle resolution: resolve handle to DID via `com.atproto.identity.resolveHandle`
+- `megaphone/engagement.py` or new `megaphone/relationships.py`:
+  - `follow_person(person_id, platform, db, config) -> dict` — resolves person to platform profile, executes follow, updates `people` table
+  - `sync_follows(db, config) -> dict` — iterates people table, follows anyone not yet followed on their available platforms
+- CLI additions: `follow <person_id> [--platform linkedin|bluesky|both]`, `follows` (list follow status)
+
+**Profile resolution strategy (from PRD):**
+
+| Input | LinkedIn | Bluesky |
+|---|---|---|
+| LinkedIn URL provided | Direct — extract profile ID | Search by name if no Bluesky handle |
+| Bluesky handle provided | Search by name if no LinkedIn URL | Direct — resolve via AT Protocol |
+| Name + Company only | Unofficial `linkedin-api` search or manual | AT Protocol search |
+
 ### Phase 2 depends on:
 - LinkedIn Developer App with `w_member_social` (set up before coding)
 - Bluesky app password
 - Voice profile examples in config.yaml
+- For follow management: unofficial `linkedin-api` library (pip install) for LinkedIn profile resolution/following
 
 ---
 
@@ -287,7 +333,9 @@ Goal: Find and comment on high-value external posts on Bluesky (and optionally L
 | 1.5 | Content scoring | 1.2 |
 | 1.6 | CLI | 1.2–1.5 |
 | 1.7 | Status lifecycle refinement | 1.2–1.6 |
-| 2 | Drafting + publishing + scheduling | Phase 1, LinkedIn app, Bluesky account |
+| 2.1–2.4 | Drafting + publishing + scheduling | Phase 1, LinkedIn app, Bluesky account |
+| 2.5 | People table + watchlist ingestion | 2.1–2.4 (platform wrappers) |
+| 2.6 | Follow management | 2.1–2.4 (platform wrappers), `linkedin-api` lib |
 | 3 | Engagement automation | Phase 2 |
 | 4 | Proactive discovery | Phase 2 (posting infra), Phase 3 (engagement patterns) |
 | 5 | Polish + optimization | Phases 1–4 |
