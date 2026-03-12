@@ -23,6 +23,7 @@ Megaphone is a system that automates the end-to-end social media thought-leaders
 | Email Newsletters | Alpha Signal, TLDR, CTO newsletters | Gmail API — filter by sender, parse HTML body |
 | RSS Feeds | Tech blogs, industry publications | RSS/Atom polling on configurable interval |
 | Social Media Feeds | Bluesky timeline | AT Protocol — home timeline + list-based feeds. **LinkedIn feed reading is NOT available via official API.** LinkedIn social feed ingestion requires unofficial approaches (see `docs/linkedin-access.md`) and is deferred to Phase 3+. |
+| People Watchlists | Specific LinkedIn/Bluesky profiles | Poll individual profiles for new posts. On Bluesky: AT Protocol author feed API. On LinkedIn: unofficial `linkedin-api` or manual curation. Watchlisted people's posts are treated as content items and flow into the same scoring/backlog pipeline as RSS and email items. |
 
 **Content Scoring:** Each extracted item is scored by an LLM-based "interestingness" algorithm across these dimensions:
 
@@ -99,6 +100,52 @@ Buffer integration is a future option if we need its analytics or multi-platform
 - Replies may optionally pass through the approval workflow (configurable)
 
 **Sentiment Analysis:** Lightweight LLM call classifying each comment as positive, neutral, negative, or spam. Negative comments are never auto-engaged.
+
+---
+
+### Module 3B: Relationship Management (Follow & Watchlist)
+
+**Purpose:** Manage a network of people to follow on LinkedIn and Bluesky, and maintain a watchlist of key individuals whose posts are ingested as content sources.
+
+**Follow Management:**
+
+The user provides a list of people to follow, with at minimum a name and company, and optimally a LinkedIn profile URL or Bluesky handle. The system:
+
+1. Resolves the person to a platform profile (LinkedIn profile URL or Bluesky DID/handle)
+2. Follows them on the specified platform(s)
+3. Tracks follow status in the `people` table
+
+| Input | LinkedIn Resolution | Bluesky Resolution |
+|---|---|---|
+| LinkedIn URL | Direct — extract profile ID | Search by name if Bluesky handle not provided |
+| Bluesky handle | Search by name if LinkedIn URL not provided | Direct — resolve via AT Protocol |
+| Name + Company | Search via unofficial `linkedin-api` or manual curation | Search via AT Protocol |
+
+**People Watchlist:**
+
+A subset of followed people can be added to a watchlist. Watchlisted people's posts are treated as a content source, equivalent to an RSS feed:
+
+- Posts are polled on a configurable interval (default: every 4 hours)
+- New posts are inserted as `content_items` with `source_type=watchlist` and attributed to the person
+- Posts flow through the same scoring/backlog pipeline as RSS and email items
+- On Bluesky: use `app.bsky.feed.getAuthorFeed` API (official, reliable)
+- On LinkedIn: unofficial `linkedin-api` to fetch profile activity, or the user manually shares URLs for ingestion
+
+**Data Model Addition — `people` table:**
+
+| Column | Type | Description |
+|---|---|---|
+| id | integer PK | Auto-increment |
+| name | text | Full name |
+| company | text | Company/org affiliation |
+| linkedin_url | text | LinkedIn profile URL (nullable) |
+| bluesky_handle | text | Bluesky handle (nullable) |
+| is_followed_linkedin | integer | 0/1 — followed on LinkedIn |
+| is_followed_bluesky | integer | 0/1 — followed on Bluesky |
+| is_watchlisted | integer | 0/1 — posts ingested as content source |
+| notes | text | Free-form notes |
+| created_at | text | ISO 8601 |
+| updated_at | text | ISO 8601 |
 
 ---
 
