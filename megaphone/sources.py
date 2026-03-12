@@ -217,9 +217,7 @@ def ingest_email(source, conn, app_config):
     service = _get_gmail_service(app_config)
 
     query = f"from:{sender}"
-    label = app_config.get("gmail", {}).get("label")
-    if label:
-        query += f" label:{label}"
+    # Search all mail — don't restrict to a label
 
     results = service.users().messages().list(
         userId="me", q=query, maxResults=20
