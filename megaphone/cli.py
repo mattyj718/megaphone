@@ -107,6 +107,91 @@ def cmd_stats(args, config, conn):
     print(f"  {'total':<12} {total:>5}")
 
 
+# --- Phase 2 commands ---
+
+def cmd_draft(args, config, conn):
+    """Generate a draft post from a content item."""
+    from megaphone.drafting import draft_post, draft_both
+
+    item = db.get_content_item(conn, args.item_id)
+    if not item:
+        print(f"Content item {args.item_id} not found.")
+        return
+
+    if args.platform == "both":
+        results = draft_both(args.item_id, conn, config)
+        for platform, post_id in results.items():
+            post = db.get_post(conn, post_id)
+            print(f"\n--- {platform.upper()} draft [post {post_id}] ---")
+            print(post["body"])
+    else:
+        post_id = draft_post(args.item_id, args.platform, conn, config)
+        post = db.get_post(conn, post_id)
+        print(f"\n--- {args.platform.upper()} draft [post {post_id}] ---")
+        print(post["body"])
+
+    print("\nUse 'approve <post_id>' to approve, then 'schedule <post_id>' to schedule.")
+
+
+def cmd_approve(args, config, conn):
+    """Mark a post as approved."""
+    post = db.get_post(conn, args.post_id)
+    if not post:
+        print(f"Post {args.post_id} not found.")
+        return
+    if post["status"] != "draft":
+        print(f"Post {args.post_id} has status '{post['status']}', expected 'draft'.")
+        return
+
+    db.update_post_status(conn, args.post_id, "approved")
+    print(f"Post {args.post_id} approved ({post['platform']}).")
+
+
+def cmd_schedule(args, config, conn):
+    """Schedule a post for publishing."""
+    from megaphone.scheduling import schedule_post
+
+    post = db.get_post(conn, args.post_id)
+    if not post:
+        print(f"Post {args.post_id} not found.")
+        return
+
+    scheduled_at = schedule_post(args.post_id, conn, config, at_time=args.time)
+    if scheduled_at:
+        print(f"Post {args.post_id} scheduled for {scheduled_at}")
+    else:
+        print("No available scheduling slot found within 14 days.")
+
+
+def cmd_publish(args, config, conn):
+    """Publish all due posts."""
+    from megaphone.scheduling import publish_due
+
+    results = publish_due(conn, config)
+    print(f"Published: {results['published']}")
+    if results["errors"]:
+        print(f"Errors ({len(results['errors'])}):")
+        for e in results["errors"]:
+            print(f"  - {e}")
+    if results["published"] == 0 and not results["errors"]:
+        print("No posts due for publishing.")
+
+
+def cmd_posts(args, config, conn):
+    """List posts."""
+    posts = db.get_posts(conn, status=args.status, limit=args.limit)
+    if not posts:
+        print("No posts found.")
+        return
+
+    for post in posts:
+        sched = post["scheduled_at"] or ""
+        body_preview = post["body"][:60].replace("\n", " ")
+        print(f"  [{post['id']:>4}] {post['platform']:<9} {post['status']:<10} {sched:<22} {body_preview}")
+
+    print(f"\n{len(posts)} posts shown")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="megaphone",
@@ -142,6 +227,29 @@ def main(argv=None):
     sub.add_parser("sources", help="List configured sources")
     sub.add_parser("stats", help="Show item counts by status")
 
+    # Phase 2 commands
+    p_draft = sub.add_parser("draft", help="Generate draft post from content item")
+    p_draft.add_argument("item_id", type=int, help="Content item ID")
+    p_draft.add_argument("--platform", default="both",
+                         choices=["linkedin", "bluesky", "both"],
+                         help="Target platform (default: both)")
+
+    p_approve = sub.add_parser("approve", help="Approve a draft post")
+    p_approve.add_argument("post_id", type=int, help="Post ID")
+
+    p_schedule = sub.add_parser("schedule", help="Schedule a post for publishing")
+    p_schedule.add_argument("post_id", type=int, help="Post ID")
+    p_schedule.add_argument("--time", default=None,
+                            help="Explicit time (ISO 8601, e.g. 2026-03-12T08:30:00Z)")
+
+    sub.add_parser("publish", help="Publish all due posts")
+
+    p_posts = sub.add_parser("posts", help="List posts")
+    p_posts.add_argument("--status", default=None,
+                         choices=["draft", "approved", "scheduled", "published", "failed"],
+                         help="Filter by status")
+    p_posts.add_argument("--limit", type=int, default=20)
+
     args = parser.parse_args(argv)
 
     if not args.command:
@@ -164,6 +272,11 @@ def main(argv=None):
         "review": cmd_review,
         "sources": cmd_sources,
         "stats": cmd_stats,
+        "draft": cmd_draft,
+        "approve": cmd_approve,
+        "schedule": cmd_schedule,
+        "publish": cmd_publish,
+        "posts": cmd_posts,
     }
 
     try:

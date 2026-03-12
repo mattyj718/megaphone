@@ -16,7 +16,7 @@ SAMPLE_CONFIG = {
         "threshold": 6.0,
         "topics": ["AI and machine learning", "developer tools"],
     },
-    "llm": {"scoring_model": "gpt-5-mini"},
+    "llm": {"scoring_model": "claude-haiku-4"},
 }
 
 GOOD_RESPONSE = json.dumps({
@@ -40,11 +40,11 @@ LOW_RESPONSE = json.dumps({
 })
 
 
-def _mock_openai_response(content):
-    """Create a mock OpenAI API response."""
+def _mock_anthropic_response(content):
+    """Create a mock Anthropic API response."""
     mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = content
+    mock_response.content = [MagicMock()]
+    mock_response.content[0].text = content
     return mock_response
 
 
@@ -62,7 +62,7 @@ class TestScoreItem:
     @patch("megaphone.scoring._get_client")
     def test_score_good_item(self, mock_get_client):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_openai_response(GOOD_RESPONSE)
+        client.messages.create.return_value = _mock_anthropic_response(GOOD_RESPONSE)
         mock_get_client.return_value = client
 
         item = {"title": "New AI Agent Framework", "body": "Details about the framework..."}
@@ -71,12 +71,12 @@ class TestScoreItem:
         assert score == 7.5
         assert reasons["relevance"] == 8.0
         assert "summary" in reasons
-        client.chat.completions.create.assert_called_once()
+        client.messages.create.assert_called_once()
 
     @patch("megaphone.scoring._get_client")
     def test_score_low_item(self, mock_get_client):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_openai_response(LOW_RESPONSE)
+        client.messages.create.return_value = _mock_anthropic_response(LOW_RESPONSE)
         mock_get_client.return_value = client
 
         item = {"title": "Celebrity Gossip", "body": "Not tech related..."}
@@ -88,7 +88,7 @@ class TestScoreItem:
     def test_score_with_markdown_code_block(self, mock_get_client):
         client = MagicMock()
         wrapped = f"```json\n{GOOD_RESPONSE}\n```"
-        client.chat.completions.create.return_value = _mock_openai_response(wrapped)
+        client.messages.create.return_value = _mock_anthropic_response(wrapped)
         mock_get_client.return_value = client
 
         item = {"title": "Test", "body": "Test body"}
@@ -98,7 +98,7 @@ class TestScoreItem:
     @patch("megaphone.scoring._get_client")
     def test_score_bad_response(self, mock_get_client):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_openai_response("not json at all")
+        client.messages.create.return_value = _mock_anthropic_response("not json at all")
         mock_get_client.return_value = client
 
         item = {"title": "Test", "body": "Test body"}
@@ -110,7 +110,7 @@ class TestScorePending:
     @patch("megaphone.scoring._get_client")
     def test_score_pending_promotes_good(self, mock_get_client, test_db):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_openai_response(GOOD_RESPONSE)
+        client.messages.create.return_value = _mock_anthropic_response(GOOD_RESPONSE)
         mock_get_client.return_value = client
 
         sid = db.upsert_source(test_db, "Feed", "rss")
@@ -126,7 +126,7 @@ class TestScorePending:
     @patch("megaphone.scoring._get_client")
     def test_score_pending_archives_low(self, mock_get_client, test_db):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_openai_response(LOW_RESPONSE)
+        client.messages.create.return_value = _mock_anthropic_response(LOW_RESPONSE)
         mock_get_client.return_value = client
 
         sid = db.upsert_source(test_db, "Feed", "rss")
@@ -149,12 +149,12 @@ class TestScorePending:
 
         count = score_pending(test_db, SAMPLE_CONFIG)
         assert count == 0
-        client.chat.completions.create.assert_not_called()
+        client.messages.create.assert_not_called()
 
     @patch("megaphone.scoring._get_client")
     def test_score_pending_handles_errors(self, mock_get_client, test_db):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_openai_response("garbage")
+        client.messages.create.return_value = _mock_anthropic_response("garbage")
         mock_get_client.return_value = client
 
         sid = db.upsert_source(test_db, "Feed", "rss")

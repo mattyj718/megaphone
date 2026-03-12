@@ -1,6 +1,8 @@
 feedparser
 pyyaml
 anthropic
+atproto
+requests
 google-api-python-client
 google-auth-oauthlib
 pytest

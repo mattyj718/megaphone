@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS content_items (
         CHECK(status IN ('raw', 'candidate', 'archived', 'drafted', 'approved', 'scheduled', 'published')),
     extracted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+CREATE TABLE IF NOT EXISTS posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_item_id INTEGER REFERENCES content_items(id),
+    platform TEXT NOT NULL CHECK(platform IN ('linkedin', 'bluesky')),
+    body TEXT NOT NULL,
+    media_urls TEXT DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft', 'approved', 'scheduled', 'published', 'failed')),
+    platform_post_id TEXT,
+    scheduled_at TEXT,
+    published_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 """
 
 
@@ -155,3 +169,81 @@ def get_status_counts(db):
         "SELECT status, COUNT(*) as cnt FROM content_items GROUP BY status"
     ).fetchall()
     return {r["status"]: r["cnt"] for r in rows}
+
+
+# --- Post queries ---
+
+def insert_post(db, content_item_id, platform, body, status="draft",
+                scheduled_at=None, media_urls=None):
+    """Insert a new post. Returns the new id."""
+    cur = db.execute(
+        """INSERT INTO posts (content_item_id, platform, body, media_urls, status, scheduled_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (content_item_id, platform, body,
+         json.dumps(media_urls or []), status, scheduled_at)
+    )
+    db.commit()
+    return cur.lastrowid
+
+
+def get_post(db, post_id):
+    """Return a single post by id, or None."""
+    row = db.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_posts(db, status=None, platform=None, limit=None):
+    """Return posts, optionally filtered by status and/or platform."""
+    query = "SELECT * FROM posts"
+    conditions = []
+    params = []
+    if status:
+        conditions.append("status = ?")
+        params.append(status)
+    if platform:
+        conditions.append("platform = ?")
+        params.append(platform)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY id DESC"
+    if limit:
+        query += " LIMIT ?"
+        params.append(limit)
+    rows = db.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_post_status(db, post_id, status):
+    """Update the status of a post."""
+    db.execute("UPDATE posts SET status = ? WHERE id = ?", (status, post_id))
+    db.commit()
+
+
+def update_post_published(db, post_id, platform_post_id):
+    """Mark a post as published with platform ID and timestamp."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.execute(
+        """UPDATE posts SET status = 'published', platform_post_id = ?, published_at = ?
+           WHERE id = ?""",
+        (platform_post_id, now, post_id)
+    )
+    db.commit()
+
+
+def update_post_scheduled(db, post_id, scheduled_at):
+    """Set scheduled_at time and status to 'scheduled'."""
+    db.execute(
+        "UPDATE posts SET status = 'scheduled', scheduled_at = ? WHERE id = ?",
+        (scheduled_at, post_id)
+    )
+    db.commit()
+
+
+def get_due_posts(db):
+    """Return posts that are scheduled and past their scheduled_at time."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = db.execute(
+        "SELECT * FROM posts WHERE status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at",
+        (now,)
+    ).fetchall()
+    return [dict(r) for r in rows]
