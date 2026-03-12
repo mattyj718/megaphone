@@ -11,6 +11,9 @@ sources:
   - name: "Hedgeweek"
     type: rss
     url: "https://www.hedgeweek.com/feed/"
+  - name: "Hedgeweek Solutions"
+    type: rss
+    url: "https://www.hedgeweek.com/solutions/feed/"
   - name: "Alpha Signal"
     type: email
     sender: "newsletter@alphasignal.ai"
