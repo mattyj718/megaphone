@@ -13,7 +13,8 @@ def cmd_ingest(args, config, conn):
     """Run content ingestion from all sources."""
     from megaphone.sources import ingest_all
     summary = ingest_all(config, conn)
-    print(f"Ingested: {summary['rss']} RSS items, {summary['email']} email items")
+    wl = summary.get('watchlist', 0)
+    print(f"Ingested: {summary['rss']} RSS, {summary['email']} email, {wl} watchlist items")
     if summary["errors"]:
         print(f"Errors ({len(summary['errors'])}):")
         for e in summary["errors"]:
@@ -177,6 +178,162 @@ def cmd_publish(args, config, conn):
         print("No posts due for publishing.")
 
 
+# --- People management commands ---
+
+def cmd_people(args, config, conn):
+    """List all people."""
+    people = db.get_people(conn)
+    if not people:
+        print("No people found. Use 'people add' to add someone.")
+        return
+
+    for p in people:
+        flags = []
+        if p["is_watchlisted"]:
+            flags.append("watchlist")
+        if p["is_followed_linkedin"]:
+            flags.append("li-follow")
+        if p["is_followed_bluesky"]:
+            flags.append("bs-follow")
+        flag_str = f"  [{', '.join(flags)}]" if flags else ""
+        handles = []
+        if p.get("linkedin_url"):
+            handles.append("LI")
+        if p.get("bluesky_handle"):
+            handles.append(f"BS:{p['bluesky_handle']}")
+        handle_str = f"  ({', '.join(handles)})" if handles else ""
+        print(f"  [{p['id']:>4}] {p['name']:<25} {p.get('company', ''):<20}{handle_str}{flag_str}")
+
+    print(f"\n{len(people)} people")
+
+
+def cmd_people_add(args, config, conn):
+    """Add a person."""
+    existing = db.person_exists(
+        conn, name=args.name, company=args.company,
+        linkedin_url=args.linkedin, bluesky_handle=args.bluesky
+    )
+    if existing:
+        print(f"Person already exists (id={existing}). Use 'people edit' to modify.")
+        return
+
+    person_id = db.insert_person(
+        conn, name=args.name, company=args.company or "",
+        linkedin_url=args.linkedin, bluesky_handle=args.bluesky,
+        is_watchlisted=1 if args.watchlist else 0,
+        notes=args.notes or ""
+    )
+    print(f"Added person [{person_id}]: {args.name}")
+
+
+def cmd_people_edit(args, config, conn):
+    """Edit a person."""
+    person = db.get_person(conn, args.id)
+    if not person:
+        print(f"Person {args.id} not found.")
+        return
+
+    updates = {}
+    if args.name is not None:
+        updates["name"] = args.name
+    if args.company is not None:
+        updates["company"] = args.company
+    if args.linkedin is not None:
+        updates["linkedin_url"] = args.linkedin
+    if args.bluesky is not None:
+        updates["bluesky_handle"] = args.bluesky
+    if args.watchlist is not None:
+        updates["is_watchlisted"] = 1 if args.watchlist else 0
+    if args.notes is not None:
+        updates["notes"] = args.notes
+
+    if not updates:
+        print("No changes specified.")
+        return
+
+    db.update_person(conn, args.id, **updates)
+    print(f"Updated person [{args.id}]: {person['name']}")
+
+
+def cmd_people_remove(args, config, conn):
+    """Remove a person."""
+    person = db.get_person(conn, args.id)
+    if not person:
+        print(f"Person {args.id} not found.")
+        return
+
+    db.delete_person(conn, args.id)
+    print(f"Removed person [{args.id}]: {person['name']}")
+
+
+def cmd_people_import(args, config, conn):
+    """Import people from a CSV file."""
+    import csv
+
+    with open(args.file, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        added = 0
+        skipped = 0
+        for row in reader:
+            name = row.get("name", "").strip()
+            if not name:
+                continue
+            company = row.get("company", "").strip()
+            linkedin_url = row.get("linkedin_url", "").strip() or None
+            bluesky_handle = row.get("bluesky_handle", "").strip() or None
+            watchlist_val = row.get("watchlist", "").strip().lower()
+            is_watchlisted = 1 if watchlist_val in ("1", "true", "yes") else 0
+            notes = row.get("notes", "").strip()
+
+            existing = db.person_exists(
+                conn, name=name, company=company,
+                linkedin_url=linkedin_url, bluesky_handle=bluesky_handle
+            )
+            if existing:
+                skipped += 1
+                continue
+
+            db.insert_person(
+                conn, name=name, company=company,
+                linkedin_url=linkedin_url, bluesky_handle=bluesky_handle,
+                is_watchlisted=is_watchlisted, notes=notes
+            )
+            added += 1
+
+    print(f"Imported {added} people ({skipped} skipped as duplicates)")
+
+
+# --- Follow management commands ---
+
+def cmd_follow(args, config, conn):
+    """Follow a person on a platform."""
+    from megaphone.relationships import follow_person
+    results = follow_person(args.person_id, args.platform, conn, config)
+    for plat, result in results.items():
+        status = result.get("status", result.get("error", "unknown"))
+        print(f"  {plat}: {status}")
+
+
+def cmd_unfollow(args, config, conn):
+    """Unfollow a person on a platform."""
+    from megaphone.relationships import unfollow_person
+    results = unfollow_person(args.person_id, args.platform, conn, config)
+    for plat, result in results.items():
+        status = result.get("status", result.get("error", "unknown"))
+        print(f"  {plat}: {status}")
+
+
+def cmd_sync_follows(args, config, conn):
+    """Sync follows — follow everyone not yet followed."""
+    from megaphone.relationships import sync_follows
+    results = sync_follows(conn, config)
+    print(f"Followed: {results['followed']}, Skipped: {results['skipped']}")
+    if results["errors"]:
+        print(f"Errors ({len(results['errors'])}):")
+        for e in results["errors"]:
+            print(f"  - {e}")
+
+
 def cmd_posts(args, config, conn):
     """List posts."""
     posts = db.get_posts(conn, status=args.status, limit=args.limit)
@@ -250,6 +407,48 @@ def main(argv=None):
                          help="Filter by status")
     p_posts.add_argument("--limit", type=int, default=20)
 
+    # People management commands
+    sub.add_parser("people", help="List all people")
+
+    p_people_add = sub.add_parser("people-add", help="Add a person")
+    p_people_add.add_argument("name", help="Person's full name")
+    p_people_add.add_argument("--company", default="", help="Company/org")
+    p_people_add.add_argument("--linkedin", default=None, help="LinkedIn profile URL")
+    p_people_add.add_argument("--bluesky", default=None, help="Bluesky handle")
+    p_people_add.add_argument("--watchlist", action="store_true", help="Add to watchlist")
+    p_people_add.add_argument("--notes", default=None, help="Free-form notes")
+
+    p_people_edit = sub.add_parser("people-edit", help="Edit a person")
+    p_people_edit.add_argument("id", type=int, help="Person ID")
+    p_people_edit.add_argument("--name", default=None)
+    p_people_edit.add_argument("--company", default=None)
+    p_people_edit.add_argument("--linkedin", default=None)
+    p_people_edit.add_argument("--bluesky", default=None)
+    p_people_edit.add_argument("--watchlist", default=None, type=lambda x: x.lower() in ("1", "true", "yes"),
+                               help="Watchlist status (true/false)")
+    p_people_edit.add_argument("--notes", default=None)
+
+    p_people_rm = sub.add_parser("people-remove", help="Remove a person")
+    p_people_rm.add_argument("id", type=int, help="Person ID")
+
+    p_people_import = sub.add_parser("people-import", help="Import people from CSV")
+    p_people_import.add_argument("file", help="Path to CSV file")
+
+    # Follow management commands
+    p_follow = sub.add_parser("follow", help="Follow a person")
+    p_follow.add_argument("person_id", type=int, help="Person ID")
+    p_follow.add_argument("--platform", default="both",
+                          choices=["linkedin", "bluesky", "both"],
+                          help="Platform (default: both)")
+
+    p_unfollow = sub.add_parser("unfollow", help="Unfollow a person")
+    p_unfollow.add_argument("person_id", type=int, help="Person ID")
+    p_unfollow.add_argument("--platform", default="both",
+                            choices=["linkedin", "bluesky", "both"],
+                            help="Platform (default: both)")
+
+    sub.add_parser("sync-follows", help="Follow everyone not yet followed")
+
     args = parser.parse_args(argv)
 
     if not args.command:
@@ -277,6 +476,14 @@ def main(argv=None):
         "schedule": cmd_schedule,
         "publish": cmd_publish,
         "posts": cmd_posts,
+        "people": cmd_people,
+        "people-add": cmd_people_add,
+        "people-edit": cmd_people_edit,
+        "people-remove": cmd_people_remove,
+        "people-import": cmd_people_import,
+        "follow": cmd_follow,
+        "unfollow": cmd_unfollow,
+        "sync-follows": cmd_sync_follows,
     }
 
     try:

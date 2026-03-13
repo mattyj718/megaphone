@@ -193,6 +193,44 @@ def get_post_comments(post_urn, config=None):
     return comments
 
 
+def follow_profile(profile_urn, config=None):
+    """Follow a LinkedIn profile.
+
+    Args:
+        profile_urn: LinkedIn profile URN (e.g. 'urn:li:person:XXXXX')
+        config: App config dict
+
+    Returns:
+        dict with result
+
+    Raises:
+        NotImplementedError: LinkedIn follow API requires credentials not yet available.
+    """
+    raise NotImplementedError(
+        "LinkedIn follow API requires additional permissions not yet configured. "
+        "Follow manually on linkedin.com for now."
+    )
+
+
+def unfollow_profile(profile_urn, config=None):
+    """Unfollow a LinkedIn profile.
+
+    Args:
+        profile_urn: LinkedIn profile URN
+        config: App config dict
+
+    Returns:
+        dict with result
+
+    Raises:
+        NotImplementedError: LinkedIn unfollow API requires credentials not yet available.
+    """
+    raise NotImplementedError(
+        "LinkedIn unfollow API requires additional permissions not yet configured. "
+        "Unfollow manually on linkedin.com for now."
+    )
+
+
 def refresh_token(client_id, client_secret, refresh_token_value):
     """Refresh an expired LinkedIn OAuth token.
 

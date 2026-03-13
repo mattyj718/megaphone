@@ -260,6 +260,80 @@ def ingest_email(source, conn, app_config):
     return new_ids
 
 
+# --- Watchlist ingestion ---
+
+def ingest_watchlist(conn, config):
+    """Ingest recent posts from watchlisted people.
+
+    For Bluesky handles: fetches author feed via AT Protocol.
+    For LinkedIn: logs a warning (requires unofficial API).
+
+    Args:
+        conn: database connection
+        config: app config dict
+
+    Returns:
+        dict with 'bluesky' count, 'linkedin' count, 'errors' list
+    """
+    from megaphone.platforms.bluesky import get_author_feed, login
+
+    people = db.get_watchlisted_people(conn)
+    summary = {"bluesky": 0, "linkedin": 0, "errors": []}
+
+    if not people:
+        log.info("No watchlisted people to ingest")
+        return summary
+
+    # Ensure a 'watchlist' source exists
+    source_id = db.upsert_source(conn, "Watchlist", "social", {"type": "watchlist"})
+
+    # Try to create a single Bluesky client for all fetches
+    bsky_client = None
+    bsky_handles = [p for p in people if p.get("bluesky_handle")]
+
+    if bsky_handles:
+        try:
+            bsky_client = login(config)
+        except Exception as e:
+            log.error("Failed to login to Bluesky for watchlist ingestion: %s", e)
+            summary["errors"].append(f"Bluesky login: {e}")
+
+    for person in people:
+        # Bluesky feed
+        if person.get("bluesky_handle") and bsky_client:
+            try:
+                posts = get_author_feed(
+                    person["bluesky_handle"], limit=20,
+                    client=bsky_client, config=config
+                )
+                for post in posts:
+                    url = post["uri"]
+                    if db.content_item_exists(conn, url):
+                        continue
+                    title = f"{person['name']}: {post['text'][:80]}"
+                    body = post["text"]
+                    db.insert_content_item(conn, source_id, title, body, url)
+                    summary["bluesky"] += 1
+                    log.info("Watchlist item from %s: %s", person["name"], title[:60])
+            except Exception as e:
+                log.error("Error fetching Bluesky feed for %s: %s", person["name"], e)
+                summary["errors"].append(f"{person['name']} (bluesky): {e}")
+
+        # LinkedIn feed — not yet supported
+        if person.get("linkedin_url"):
+            log.warning(
+                "LinkedIn feed reading for %s not supported yet — "
+                "requires unofficial API. Share URLs manually.",
+                person["name"]
+            )
+
+    log.info(
+        "Watchlist ingestion: %d Bluesky posts, %d LinkedIn posts",
+        summary["bluesky"], summary["linkedin"]
+    )
+    return summary
+
+
 # --- Top-level ingestion ---
 
 def ingest_all(app_config, conn):
@@ -272,7 +346,7 @@ def ingest_all(app_config, conn):
         db.upsert_source(conn, src["name"], src["type"], src_config)
 
     sources = db.get_sources(conn, active=True)
-    summary = {"rss": 0, "email": 0, "errors": []}
+    summary = {"rss": 0, "email": 0, "watchlist": 0, "errors": []}
 
     for source in sources:
         try:
@@ -282,10 +356,21 @@ def ingest_all(app_config, conn):
             elif source["type"] == "email":
                 ids = ingest_email(source, conn, app_config)
                 summary["email"] += len(ids)
+            elif source["type"] == "social":
+                pass  # handled below via ingest_watchlist
             else:
                 log.warning("Unknown source type: %s", source["type"])
         except Exception as e:
             log.error("Error ingesting %s: %s", source["name"], e)
             summary["errors"].append(f"{source['name']}: {e}")
+
+    # Watchlist ingestion
+    try:
+        wl = ingest_watchlist(conn, app_config)
+        summary["watchlist"] = wl["bluesky"] + wl["linkedin"]
+        summary["errors"].extend(wl["errors"])
+    except Exception as e:
+        log.error("Error ingesting watchlist: %s", e)
+        summary["errors"].append(f"watchlist: {e}")
 
     return summary

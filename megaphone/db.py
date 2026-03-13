@@ -30,6 +30,20 @@ CREATE TABLE IF NOT EXISTS content_items (
     extracted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
+CREATE TABLE IF NOT EXISTS people (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    company TEXT NOT NULL DEFAULT '',
+    linkedin_url TEXT,
+    bluesky_handle TEXT,
+    is_followed_linkedin INTEGER NOT NULL DEFAULT 0,
+    is_followed_bluesky INTEGER NOT NULL DEFAULT 0,
+    is_watchlisted INTEGER NOT NULL DEFAULT 0,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
 CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     content_item_id INTEGER REFERENCES content_items(id),
@@ -247,3 +261,89 @@ def get_due_posts(db):
         (now,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- People queries ---
+
+def _now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def insert_person(db, name, company="", linkedin_url=None, bluesky_handle=None,
+                  is_watchlisted=0, notes=""):
+    """Insert a new person. Returns the new id."""
+    now = _now()
+    cur = db.execute(
+        """INSERT INTO people (name, company, linkedin_url, bluesky_handle,
+           is_watchlisted, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (name, company, linkedin_url, bluesky_handle, is_watchlisted, notes, now, now)
+    )
+    db.commit()
+    return cur.lastrowid
+
+
+def get_people(db, watchlisted=None):
+    """Return people, optionally filtered by watchlist status."""
+    if watchlisted is None:
+        rows = db.execute("SELECT * FROM people ORDER BY id").fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM people WHERE is_watchlisted = ? ORDER BY id",
+            (1 if watchlisted else 0,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_person(db, person_id):
+    """Return a single person by id, or None."""
+    row = db.execute("SELECT * FROM people WHERE id = ?", (person_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_watchlisted_people(db):
+    """Return all watchlisted people."""
+    return get_people(db, watchlisted=True)
+
+
+def update_person(db, person_id, **kwargs):
+    """Update person fields. Pass only the fields to change."""
+    allowed = {"name", "company", "linkedin_url", "bluesky_handle",
+               "is_followed_linkedin", "is_followed_bluesky", "is_watchlisted", "notes"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return
+    fields["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [person_id]
+    db.execute(f"UPDATE people SET {set_clause} WHERE id = ?", values)
+    db.commit()
+
+
+def delete_person(db, person_id):
+    """Delete a person by id."""
+    db.execute("DELETE FROM people WHERE id = ?", (person_id,))
+    db.commit()
+
+
+def person_exists(db, name=None, company=None, linkedin_url=None, bluesky_handle=None):
+    """Check if a person already exists (dedup by linkedin_url, bluesky_handle, or name+company)."""
+    if linkedin_url:
+        row = db.execute(
+            "SELECT id FROM people WHERE linkedin_url = ?", (linkedin_url,)
+        ).fetchone()
+        if row:
+            return row["id"]
+    if bluesky_handle:
+        row = db.execute(
+            "SELECT id FROM people WHERE bluesky_handle = ?", (bluesky_handle,)
+        ).fetchone()
+        if row:
+            return row["id"]
+    if name and company:
+        row = db.execute(
+            "SELECT id FROM people WHERE name = ? AND company = ?", (name, company)
+        ).fetchone()
+        if row:
+            return row["id"]
+    return None

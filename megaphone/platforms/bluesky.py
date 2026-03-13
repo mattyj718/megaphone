@@ -129,6 +129,101 @@ def add_reaction(post_uri, post_cid, client=None, config=None):
     return {"uri": response.uri, "raw_response": response}
 
 
+def follow_account(handle, client=None, config=None):
+    """Follow a Bluesky account.
+
+    Args:
+        handle: Bluesky handle (e.g. 'user.bsky.social')
+        client: Authenticated Client instance
+        config: App config dict
+
+    Returns:
+        dict with 'uri' and 'did'
+    """
+    if not client:
+        client = login(config)
+
+    # Resolve handle to DID
+    response = client.resolve_handle(handle)
+    did = response.did
+
+    # Create follow record
+    follow = client.follow(did)
+    log.info("Followed %s (%s)", handle, did)
+
+    return {"uri": follow.uri, "did": did}
+
+
+def unfollow_account(handle, client=None, config=None):
+    """Unfollow a Bluesky account.
+
+    Args:
+        handle: Bluesky handle
+        client: Authenticated Client instance
+        config: App config dict
+
+    Returns:
+        dict with 'handle' and 'did'
+    """
+    if not client:
+        client = login(config)
+
+    # Resolve handle to DID
+    response = client.resolve_handle(handle)
+    did = response.did
+
+    # Find existing follow record
+    follows = client.app.bsky.graph.get_follows(
+        {"actor": client.me.did, "limit": 100}
+    )
+    for f in follows.follows:
+        if f.did == did:
+            # Delete the follow record using the rkey from the follow URI
+            repo = client.me.did
+            rkey = f.viewer.following.split("/")[-1]
+            client.app.bsky.graph.follow.delete(repo, rkey)
+            log.info("Unfollowed %s (%s)", handle, did)
+            return {"handle": handle, "did": did}
+
+    log.warning("No existing follow found for %s", handle)
+    return {"handle": handle, "did": did}
+
+
+def get_author_feed(handle, limit=20, client=None, config=None):
+    """Fetch recent posts from a Bluesky profile.
+
+    Args:
+        handle: Bluesky handle
+        limit: Max posts to return (default 20)
+        client: Authenticated Client instance
+        config: App config dict
+
+    Returns:
+        list of dicts with 'uri', 'cid', 'text', 'created_at', 'author'
+    """
+    if not client:
+        client = login(config)
+
+    response = client.get_author_feed(actor=handle, limit=limit)
+    posts = []
+    for item in response.feed:
+        post = item.post
+        # Skip reposts — only include original posts
+        if hasattr(item, "reason") and item.reason:
+            continue
+        posts.append({
+            "uri": post.uri,
+            "cid": post.cid,
+            "text": post.record.text,
+            "created_at": post.record.created_at if hasattr(post.record, "created_at") else "",
+            "author": post.author.handle,
+            "author_name": post.author.display_name or post.author.handle,
+        })
+
+    log.info("Fetched %d posts from %s", len(posts), handle)
+    return posts
+
+
 def get_post_comments(post_uri, client=None, config=None):
     """Fetch replies to a Bluesky post.
 
